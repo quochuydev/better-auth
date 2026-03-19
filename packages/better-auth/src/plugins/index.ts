@@ -13,6 +13,7 @@ export * from "./haveibeenpwned";
 export * from "./jwt";
 export * from "./last-login-method";
 export * from "./magic-link";
+export * from "./metamask";
 export * from "./mcp";
 export * from "./multi-session";
 export * from "./oauth-proxy";

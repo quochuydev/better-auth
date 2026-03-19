@@ -1,0 +1,232 @@
+---
+title: Sign In with MetaMask
+description: Authenticate users with their MetaMask wallet using EIP-191 and SIWE.
+---
+
+The MetaMask plugin lets users sign in with their Ethereum wallet using the
+[EIP-191 personal_sign](https://eips.ethereum.org/EIPS/eip-191) method and
+the [EIP-4361 (Sign-In with Ethereum)](https://eips.ethereum.org/EIPS/eip-4361)
+message format.
+
+Unlike the [SIWE plugin](/docs/plugins/siwe), this plugin is **fully batteries-included**:
+signature verification is handled internally using `@noble/curves` — no external
+library or custom callback is required.
+
+## Installation
+
+<Steps>
+    <Step>
+        ### Add the Server Plugin
+
+        ```ts title="auth.ts"
+        import { betterAuth } from "better-auth";
+        import { metamask } from "better-auth/plugins"; // [!code highlight]
+
+        export const auth = betterAuth({
+            plugins: [
+                metamask({ // [!code highlight]
+                    domain: "example.com",       // optional, inferred from baseURL
+                    statement: "Sign in to MyApp", // shown in MetaMask prompt
+                    anonymous: true,             // default: allow sign-in without email
+                }), // [!code highlight]
+            ],
+        });
+        ```
+    </Step>
+
+    <Step>
+        ### Migrate the database
+
+        Run the migration or generate the schema to add the necessary fields and tables to the database.
+
+        <Tabs items={["migrate", "generate"]}>
+            <Tab value="migrate">
+            ```package-install
+            npx auth migrate
+            ```
+            </Tab>
+            <Tab value="generate">
+            ```package-install
+            npx auth generate
+            ```
+            </Tab>
+        </Tabs>
+
+        See the [Schema](#schema) section to add the fields manually.
+    </Step>
+
+    <Step>
+        ### Add the Client Plugin
+
+        ```ts title="auth-client.ts"
+        import { createAuthClient } from "better-auth/client";
+        import { metamaskClient } from "better-auth/client/plugins"; // [!code highlight]
+
+        export const authClient = createAuthClient({
+            plugins: [
+                metamaskClient(), // [!code highlight]
+            ],
+        });
+        ```
+    </Step>
+</Steps>
+
+## Usage
+
+The sign-in flow has three steps: request a challenge, sign it with MetaMask, then verify.
+
+### 1. Request a challenge
+
+The server generates a cryptographic nonce and a ready-to-sign
+[SIWE-formatted message](https://eips.ethereum.org/EIPS/eip-4361).
+
+```ts
+const { data, error } = await authClient.metamask.nonce({
+    walletAddress: "0x1234...5678",
+    chainId: 1, // optional, defaults to 1 (Ethereum mainnet)
+});
+
+// data.nonce   — the raw nonce
+// data.message — the full SIWE message to show in MetaMask
+```
+
+### 2. Sign with MetaMask
+
+Pass the message directly to MetaMask using `personal_sign`:
+
+```ts
+const signature = await window.ethereum.request({
+    method: "personal_sign",
+    params: [data.message, walletAddress],
+});
+```
+
+### 3. Verify the signature
+
+```ts
+const { data: session, error } = await authClient.metamask.verify({
+    message: data.message,     // the exact message returned in step 1
+    signature,                 // hex signature from MetaMask
+    walletAddress: "0x1234...5678",
+    chainId: 1,
+    email: "user@example.com", // optional — required only when anonymous is false
+});
+```
+
+On success, a session cookie is set and `session.token` is returned.
+
+### Full React example
+
+```tsx
+import { useState } from "react";
+import { authClient } from "@/lib/auth-client";
+
+export function MetaMaskSignIn() {
+    const [loading, setLoading] = useState(false);
+
+    async function handleSignIn() {
+        setLoading(true);
+        try {
+            const walletAddress = (
+                await window.ethereum.request({ method: "eth_requestAccounts" })
+            )[0];
+            const chainId = parseInt(
+                await window.ethereum.request({ method: "eth_chainId" }),
+                16,
+            );
+
+            // 1. Get challenge
+            const { data: challenge, error } = await authClient.metamask.nonce({
+                walletAddress,
+                chainId,
+            });
+            if (error || !challenge) throw error;
+
+            // 2. Sign with MetaMask
+            const signature = await window.ethereum.request({
+                method: "personal_sign",
+                params: [challenge.message, walletAddress],
+            });
+
+            // 3. Verify → session created
+            const { error: verifyError } = await authClient.metamask.verify({
+                message: challenge.message,
+                signature,
+                walletAddress,
+                chainId,
+            });
+            if (verifyError) throw verifyError;
+        } finally {
+            setLoading(false);
+        }
+    }
+
+    return (
+        <button onClick={handleSignIn} disabled={loading}>
+            {loading ? "Signing in…" : "Sign in with MetaMask"}
+        </button>
+    );
+}
+```
+
+## Configuration Options
+
+### Server Options
+
+| Option            | Type       | Default                     | Description                                                     |
+| ----------------- | ---------- | --------------------------- | --------------------------------------------------------------- |
+| `domain`          | `string`   | Inferred from `baseURL`     | Domain shown in the MetaMask sign-in prompt                     |
+| `statement`       | `string`   | —                           | Human-readable statement shown in the MetaMask prompt           |
+| `resources`       | `string[]` | —                           | Additional resource URIs included in the SIWE message           |
+| `anonymous`       | `boolean`  | `true`                      | Allow sign-in without an email. Generates a placeholder email   |
+| `emailDomainName` | `string`   | Inferred from `baseURL`     | Domain for placeholder emails when `anonymous` is `true`        |
+| `schema`          | `object`   | —                           | Override field or model names for the `metamaskAccount` table   |
+
+### Requiring an email
+
+Set `anonymous: false` to require a real email during sign-in:
+
+```ts
+metamask({ anonymous: false })
+```
+
+The client must then pass `email` in the verify call:
+
+```ts
+await authClient.metamask.verify({
+    message,
+    signature,
+    walletAddress,
+    email: "user@example.com", // required
+});
+```
+
+## Schema
+
+The plugin adds a `metamaskAccount` table to store wallet-to-user associations.
+
+| Field       | Type   | Description                             |
+| ----------- | ------ | --------------------------------------- |
+| id          | string | Primary key                             |
+| userId      | string | Reference to `user.id`                  |
+| address     | string | ERC-55 checksummed Ethereum address     |
+| chainId     | number | Chain ID (e.g. `1` for Ethereum mainnet) |
+| createdAt   | date   | Creation timestamp                      |
+
+## Nonce security
+
+- Each nonce is single-use — it is deleted immediately after a successful verification.
+- Nonces expire after **15 minutes**.
+- The nonce is embedded in the SIWE message so MetaMask displays it to the user; the server re-extracts and validates it on verify.
+
+## How it differs from the SIWE plugin
+
+| | `siwe` | `metamask` |
+|---|---|---|
+| Signature verification | Caller-provided (`verifyMessage` callback) | Built-in (`@noble/curves`) |
+| Message generation | Caller-provided via nonce + custom logic | Server generates full SIWE message |
+| Required options | `domain`, `getNonce`, `verifyMessage` | None |
+| ENS lookup | Supported | Not included |
+| Multi-chain wallet table | `walletAddress` (with `isPrimary`) | `metamaskAccount` |
+
+Use `siwe` when you need maximum control (custom verification library, ENS lookup, smart-contract wallets via EIP-1271). Use `metamask` for the simplest possible wallet sign-in.
