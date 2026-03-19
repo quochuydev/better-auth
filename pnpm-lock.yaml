@@ -1038,6 +1038,9 @@ importers:
       '@noble/ciphers':
         specifier: ^2.1.1
         version: 2.1.1
+      '@noble/curves':
+        specifier: ^1.8.1
+        version: 1.9.7
       '@noble/hashes':
         specifier: ^2.0.1
         version: 2.0.1
@@ -4523,6 +4526,10 @@ packages:
   '@noble/ciphers@2.1.1':
     resolution: {integrity: sha512-bysYuiVfhxNJuldNXlFEitTVdNnYUc+XNJZd7Qm2a5j1vZHgY+fazadNFWFaMK/2vye0JVlxV3gHmC0WDfAOQw==}
     engines: {node: '>= 20.19.0'}
+
+  '@noble/curves@1.9.7':
+    resolution: {integrity: sha512-gbKGcRUYIjA3/zCCNaWDciTMFI0dCkvou3TL8Zmy5Nc7sJ47a0jtOeZoTaMxkuqRo9cRhjOdZJXegxYE5FN/xw==}
+    engines: {node: ^14.21.3 || >=16}
 
   '@noble/hashes@1.8.0':
     resolution: {integrity: sha512-jCs9ldd7NwzpgXDIf6P3+NrHh9/sD6CQdxHyjQI+h/6rDNo88ypBxxz45UDuZHz9r3tNz7N/VInSVoVdtXEI4A==}
@@ -18648,8 +18655,11 @@ snapshots:
 
   '@noble/ciphers@2.1.1': {}
 
-  '@noble/hashes@1.8.0':
-    optional: true
+  '@noble/curves@1.9.7':
+    dependencies:
+      '@noble/hashes': 1.8.0
+
+  '@noble/hashes@1.8.0': {}
 
   '@noble/hashes@2.0.1': {}
 

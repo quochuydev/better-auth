@@ -498,6 +498,7 @@
     "@better-auth/utils": "catalog:",
     "@better-fetch/fetch": "catalog:",
     "@noble/ciphers": "^2.1.1",
+    "@noble/curves": "^1.8.1",
     "@noble/hashes": "^2.0.1",
     "better-call": "catalog:",
     "defu": "^6.1.4",
